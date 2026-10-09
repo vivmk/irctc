@@ -2,7 +2,8 @@
   "name": "irctc",
   "private": true,
   "scripts": {
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
