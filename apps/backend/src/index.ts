@@ -13,6 +13,7 @@ app.get("/health", async (_request, reply) => {
   const [database, redisOk] = await Promise.all([pingDatabase(), pingRedis()]);
 
   const body: HealthResponse = {
+    version: "1.0.0",
     status: database && redisOk ? "ok" : "broken",
     details: { database, redis: redisOk },
   };

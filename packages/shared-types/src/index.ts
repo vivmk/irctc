@@ -39,6 +39,7 @@ export type BookingResponse = {
 };
 
 export type HealthResponse = {
+  version: string;
   status: "ok" | "broken";
   details: { database: boolean; redis: boolean };
 };
