@@ -42,3 +42,14 @@ export type HealthResponse = {
   status: "ok" | "broken";
   details: { database: boolean; redis: boolean };
 };
+
+export type AvailabilityResponse = {
+  trainNumber: string;
+  date: string;
+  from: string;
+  to: string;
+  class: string;
+  segments: { first: number; last: number };
+  availableCount: number;
+  seats: { coach: string; seat: number }[];
+};

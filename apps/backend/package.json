@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "typecheck": "tsc -p ."
+    "start": "tsx src/migrate.ts && tsx src/index.ts",
+    "typecheck": "tsc -p .",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@irctc/shared-types": "workspace:*",
