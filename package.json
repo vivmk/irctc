@@ -1,0 +1,10 @@
+{
+  "name": "irctc",
+  "private": true,
+  "scripts": {
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
