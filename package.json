@@ -1,6 +1,7 @@
 {
   "name": "irctc",
   "private": true,
+  "packageManager": "pnpm@12.10.1",
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
