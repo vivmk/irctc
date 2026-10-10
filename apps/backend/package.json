@@ -8,7 +8,8 @@
     "start": "tsx src/migrate.ts && tsx src/index.ts",
     "typecheck": "tsc -p .",
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "stress": "tsx src/stress.ts"
   },
   "dependencies": {
     "@irctc/shared-types": "workspace:*",

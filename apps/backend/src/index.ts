@@ -5,11 +5,13 @@ import { config } from "./config";
 import { pingDatabase } from "./db";
 import { pingRedis } from "./redis";
 import { availabilityRoutes } from "./availability";
+import { bookingRoutes } from "./bookings";
 
 const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
 await app.register(availabilityRoutes);
+await app.register(bookingRoutes);
 
 app.get("/health", async (_request, reply) => {
   const [database, redisOk] = await Promise.all([pingDatabase(), pingRedis()]);

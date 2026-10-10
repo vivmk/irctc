@@ -77,7 +77,7 @@ export async function availabilityRoutes(app: FastifyInstance) {
        where s.run_id = $1
          and c.class = $2
          and s.segment_no between $3 and $4
-         and s.status = 'free'
+         and (s.status = 'free' or (s.status = 'held' and s.held_until < now()))
        group by s.coach_code, s.seat_number
        having count(*) = $5
        order by s.coach_code, s.seat_number`,
