@@ -6,12 +6,17 @@ import { pingDatabase } from "./db";
 import { pingRedis } from "./redis";
 import { availabilityRoutes } from "./availability";
 import { bookingRoutes } from "./bookings";
+import { paymentRoutes, reconcileOnce } from "./payments";
+import { fakeBankRoutes } from "./fakebank";
 
 const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
 await app.register(availabilityRoutes);
 await app.register(bookingRoutes);
+await app.register(paymentRoutes);
+
+if (config.enableFakeBank) await app.register(fakeBankRoutes);
 
 app.get("/health", async (_request, reply) => {
   const [database, redisOk] = await Promise.all([pingDatabase(), pingRedis()]);
@@ -25,3 +30,9 @@ app.get("/health", async (_request, reply) => {
 });
 
 await app.listen({ port: config.port, host: "0.0.0.0" });
+
+setInterval(
+  () =>
+    reconcileOnce(config.reconcileAfterSeconds).catch((e) => app.log.error(e)),
+  30_000,
+);

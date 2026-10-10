@@ -4,4 +4,11 @@ export const config = {
     process.env.DATABASE_URL ?? "postgres://irctc:irctc@localhost:5432/irctc",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   holdSeconds: Number(process.env.HOLD_SECONDS ?? 300),
+  selfUrl:
+    process.env.SELF_URL ??
+    `http://localhost:${Number(process.env.PORT ?? 3001)}`,
+  bankSecret: process.env.BANK_SECRET ?? "dev-only-secret",
+  farePaise: Number(process.env.FARE_PAISE ?? 50000), // Rs 500 per passenger
+  reconcileAfterSeconds: Number(process.env.RECONCILE_AFTER_SECONDS ?? 60),
+  enableFakeBank: process.env.ENABLE_FAKE_BANK !== "false",
 };

@@ -1,3 +1,18 @@
+export type PaymentStatus =
+  | "initiated"
+  | "succeeded"
+  | "failed"
+  | "refund_pending"
+  | "refunded";
+
+export type PaymentStartResponse = {
+  bookingId: string;
+  paymentId: string;
+  bankRef: string; // the bank's reference for this payment
+  amountPaise: number;
+  status: PaymentStatus;
+};
+
 export const BOOKING_STAGES = [
   "started",
   "seats_held",
