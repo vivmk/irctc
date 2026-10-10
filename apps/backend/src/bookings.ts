@@ -189,11 +189,11 @@ export async function bookingRoutes(app: FastifyInstance) {
       // 2. seen before? hand back the earlier result, change nothing
       if (created.rowCount === 0) {
         await client.query("rollback");
-        const prev = await pool.query(
+        const prev = await client.query(
           "select id from bookings where request_id = $1",
           [b.requestId],
         );
-        return reply.code(200).send(await loadBooking(pool, prev.rows[0].id));
+        return reply.code(200).send(await loadBooking(client, prev.rows[0].id));
       }
       const bookingId: string = created.rows[0].id;
 
@@ -222,7 +222,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       }
 
       await client.query("commit");
-      return reply.code(201).send(await loadBooking(pool, bookingId));
+      return reply.code(201).send(await loadBooking(client, bookingId));
     } catch (e) {
       await client.query("rollback").catch(() => {});
       throw e;

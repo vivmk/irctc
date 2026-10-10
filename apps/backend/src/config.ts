@@ -16,4 +16,5 @@ export const config = {
   relayEverySeconds: Number(process.env.RELAY_EVERY_SECONDS ?? 2),
   notifyAttempts: Number(process.env.NOTIFY_ATTEMPTS ?? 5),
   notifyBackoffMs: Number(process.env.NOTIFY_BACKOFF_MS ?? 2000),
+  reconcileEverySeconds: Number(process.env.RECONCILE_EVERY_SECONDS ?? 30),
 };

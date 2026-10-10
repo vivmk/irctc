@@ -18,7 +18,7 @@ const env = {
   SWEEP_EVERY_SECONDS: "3600", // tests run the sweeper by hand
   RELAY_EVERY_SECONDS: "1",
   NOTIFY_ATTEMPTS: "8",
-  NOTIFY_BACKOFF_MS: "200", // fast retries
+  NOTIFY_BACKOFF_MS: "100", // fast retries
 };
 
 function runScript(file: string) {

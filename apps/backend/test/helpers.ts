@@ -1,6 +1,35 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import pg from "pg";
 import { BASE, TEST_DB_URL } from "./constants";
+
+export const FARE = 50000; // paise per passenger, matches the server default
+
+export const dbStage = async (id: string) =>
+  (await db.query("select stage from bookings where id = $1", [id])).rows[0]
+    .stage as string;
+
+// a correctly signed call "from the bank", with any status and amount we choose
+export async function signedWebhook(
+  ref: string,
+  status: string,
+  amountPaise: number,
+) {
+  const signature = createHmac("sha256", "test-secret")
+    .update(`${ref}|${status}|${amountPaise}`)
+    .digest("hex");
+  const res = await fetch(`${BASE}/webhooks/payment`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-bank-signature": signature,
+    },
+    body: JSON.stringify({ ref, status, amountPaise }),
+  });
+  return {
+    status: res.status,
+    body: (await res.json().catch(() => null)) as any,
+  };
+}
 
 export const db = new pg.Pool({ connectionString: TEST_DB_URL, max: 3 });
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

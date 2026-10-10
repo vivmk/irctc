@@ -19,7 +19,10 @@ export function startScheduler(log: FastifyBaseLogger) {
     }, seconds * 1000);
 
   const timers = [
-    every(30, "reconcile", () => reconcileOnce(config.reconcileAfterSeconds)),
+    every(config.reconcileEverySeconds, "reconcile", () =>
+      reconcileOnce(config.reconcileAfterSeconds),
+    ),
+    ,
     every(config.sweepEverySeconds, "sweep", sweepExpiredHolds),
     every(config.relayEverySeconds, "relay", relayOutbox),
   ];
