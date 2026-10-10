@@ -4,6 +4,7 @@ import { withLock } from "./lock";
 import { reconcileOnce } from "./payments";
 import { sweepExpiredHolds } from "./sweeper";
 import { relayOutbox } from "./queue";
+import { promoteAllWaitlists } from "./waitlist";
 
 export function startScheduler(log: FastifyBaseLogger) {
   const every = (seconds: number, name: string, job: () => Promise<unknown>) =>
@@ -25,6 +26,7 @@ export function startScheduler(log: FastifyBaseLogger) {
     ,
     every(config.sweepEverySeconds, "sweep", sweepExpiredHolds),
     every(config.relayEverySeconds, "relay", relayOutbox),
+    every(config.waitlistEverySeconds, "waitlist", promoteAllWaitlists),
   ];
   return () => timers.forEach(clearInterval);
 }

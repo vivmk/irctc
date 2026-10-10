@@ -19,11 +19,11 @@ export async function bankStatus(ref: string): Promise<string> {
   return r.rowCount === 0 ? "unknown" : r.rows[0].status;
 }
 
-export async function bankRefund(ref: string) {
+export async function bankRefund(ref: string, amountPaise: number) {
   // safe to call twice: only a 'paid' transaction can become 'refunded'
   await pool.query(
-    "update fake_bank_transactions set status = 'refunded' where ref = $1 and status = 'paid'",
-    [ref],
+    "update fake_bank_transactions set status = 'refunded', refunded_paise = $2 where ref = $1 and status = 'paid'",
+    [ref, amountPaise],
   );
 }
 
@@ -113,7 +113,7 @@ export async function fakeBankRoutes(app: FastifyInstance) {
 
   app.get<P>("/fakebank/:ref", async (req, reply) => {
     const r = await pool.query(
-      "select ref, status, amount_paise from fake_bank_transactions where ref = $1",
+      "select ref, status, amount_paise, refunded_paise from fake_bank_transactions where ref = $1",
       [req.params.ref],
     );
     return (

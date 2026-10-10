@@ -46,6 +46,7 @@ export type BookingRequest = {
   to: string;
   class: string;
   passengers: Passenger[];
+  waitlistIfFull?: boolean;
 };
 
 export type BookingResponse = {
@@ -53,6 +54,15 @@ export type BookingResponse = {
   stage: BookingStage;
   holdExpiresAt?: string;
   seats: { passenger: string; coach: string; seat: number }[];
+  waitlistRequested: boolean;
+  waitlistPosition?: number; // 1 = first in line
+};
+
+export type CancelResponse = {
+  bookingId: string;
+  stage: BookingStage;
+  refundPaise: number;
+  refundStatus: "none" | "refund_pending" | "refunded";
 };
 
 export type HealthResponse = {

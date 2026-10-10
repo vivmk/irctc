@@ -12,6 +12,7 @@ const env = {
   PORT: String(TEST_PORT),
   HOLD_SECONDS: "3", // holds expire in 3 seconds, so late-payment tests are quick
   RECONCILE_AFTER_SECONDS: "3600", // the background job stays out of the way; tests trigger it by hand
+  WAITLIST_EVERY_SECONDS: "3600",
   ENABLE_FAKE_BANK: "true",
   BANK_SECRET: "test-secret",
   QUEUE_PREFIX: "irctc-test", // own queue, separate from dev

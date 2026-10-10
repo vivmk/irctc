@@ -38,6 +38,8 @@ function validate(b: Partial<BookingRequest> | undefined): string | null {
     if (!["male", "female", "other"].includes(p.gender))
       return "gender must be male, female or other";
   }
+  if (b.waitlistIfFull !== undefined && typeof b.waitlistIfFull !== "boolean")
+    return "waitlistIfFull must be true or false";
   return null;
 }
 
@@ -46,19 +48,31 @@ async function loadBooking(
   id: string,
 ): Promise<BookingResponse | null> {
   const b = await db.query(
-    "select id, stage, hold_expires_at from bookings where id = $1",
+    "select id, stage, hold_expires_at, waitlist_requested from bookings where id = $1",
     [id],
   );
   if (b.rowCount === 0) return null;
   const p = await db.query(
     `select name, coach_code, seat_number from booking_passengers
-     where booking_id = $1 order by position`,
+     where booking_id = $1 and coach_code is not null order by position`,
     [id],
   );
   const row = b.rows[0];
-  // a hold whose time has run out is reported as expired, even before cleanup runs
   const timedOut =
     row.stage === "seats_held" && row.hold_expires_at < new Date();
+
+  let waitlistPosition: number | undefined;
+  if (row.stage === "waitlisted") {
+    // my place in line = how many waiting bookings are at or ahead of me
+    const pos = await db.query(
+      `select count(*)::int as n
+       from bookings o join bookings me on me.id = $1
+       where o.run_id = me.run_id and o.class = me.class and o.stage = 'waitlisted'
+         and (o.waitlisted_at, o.id) <= (me.waitlisted_at, me.id)`,
+      [id],
+    );
+    waitlistPosition = pos.rows[0].n;
+  }
   return {
     bookingId: row.id,
     stage: (timedOut ? "expired" : row.stage) as BookingStage,
@@ -68,11 +82,13 @@ async function loadBooking(
       coach: r.coach_code,
       seat: r.seat_number,
     })),
+    waitlistRequested: row.waitlist_requested,
+    waitlistPosition,
   };
 }
 
 // Try to hold ONE seat for the whole journey. Returns the seat, or null if none could be taken.
-async function grabOneSeat(
+export async function grabOneSeat(
   client: PoolClient,
   a: {
     runId: number;
@@ -198,6 +214,9 @@ export async function bookingRoutes(app: FastifyInstance) {
       const bookingId: string = created.rows[0].id;
 
       // 3. one seat per passenger, all inside this same all-or-nothing step
+      // 3. one seat per passenger, all inside this same all-or-nothing step
+      await client.query("savepoint seats"); // a bookmark we can roll back to
+      let gotAll = true;
       for (let i = 0; i < b.passengers.length; i++) {
         const seat = await grabOneSeat(client, {
           runId: journey.runId,
@@ -207,10 +226,8 @@ export async function bookingRoutes(app: FastifyInstance) {
           bookingId,
         });
         if (!seat) {
-          await client.query("rollback"); // release everything we grabbed so far
-          return reply
-            .code(409)
-            .send(err("SOLD_OUT", "Not enough seats available", false));
+          gotAll = false;
+          break;
         }
         const p = b.passengers[i];
         await client.query(
@@ -218,6 +235,29 @@ export async function bookingRoutes(app: FastifyInstance) {
              (booking_id, position, name, age, gender, coach_code, seat_number)
            values ($1, $2, $3, $4, $5, $6, $7)`,
           [bookingId, i + 1, p.name, p.age, p.gender, seat.coach, seat.seat],
+        );
+      }
+
+      if (!gotAll) {
+        if (!b.waitlistIfFull) {
+          await client.query("rollback"); // release everything we grabbed so far
+          return reply
+            .code(409)
+            .send(err("SOLD_OUT", "Not enough seats available", false));
+        }
+        // give back any seats grabbed so far, and record the passengers without seats
+        await client.query("rollback to savepoint seats");
+        for (let i = 0; i < b.passengers.length; i++) {
+          const p = b.passengers[i];
+          await client.query(
+            `insert into booking_passengers (booking_id, position, name, age, gender)
+             values ($1, $2, $3, $4, $5)`,
+            [bookingId, i + 1, p.name, p.age, p.gender],
+          );
+        }
+        await client.query(
+          "update bookings set waitlist_requested = true where id = $1",
+          [bookingId],
         );
       }
 

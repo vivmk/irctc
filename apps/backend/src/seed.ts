@@ -16,14 +16,15 @@ async function main() {
     on conflict (number) do nothing`);
 
   await pool.query(`
-    insert into train_stops (train_id, stop_order, station_id, day_offset)
-    select t.id, v.ord, s.id, v.off
+    insert into train_stops (train_id, stop_order, station_id, departure_time, day_offset)
+    select t.id, v.ord, s.id, v.dep::time, v.off
     from trains t
-    join (values (1,'NDLS',0), (2,'CNB',0), (3,'PRYJ',0), (4,'PNBE',1))
-      as v(ord, code, off) on true
+    join (values (1,'NDLS','16:00',0), (2,'CNB','22:00',0), (3,'PRYJ','01:00',1), (4,'PNBE','06:00',1))
+      as v(ord, code, dep, off) on true
     join stations s on s.code = v.code
     where t.number = '12345'
-    on conflict do nothing`);
+    on conflict (train_id, stop_order) do update
+      set departure_time = excluded.departure_time, day_offset = excluded.day_offset`);
 
   await pool.query(`
     insert into coaches (train_id, coach_code, class, seat_count)

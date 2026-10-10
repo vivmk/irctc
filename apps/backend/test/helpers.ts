@@ -87,6 +87,7 @@ type BookOpts = {
   cls?: string;
   pax?: number;
   requestId?: string;
+  waitlist?: boolean;
   from?: string;
   to?: string;
 };
@@ -104,7 +105,39 @@ export const book = (o: BookOpts = {}) =>
       age: 30,
       gender: "male",
     })),
+    ...(o.waitlist ? { waitlistIfFull: true } : {}),
   });
+
+export const cancel = (id: string) => api("POST", `/bookings/${id}/cancel`);
+export const promote = () => api("POST", "/admin/promote");
+export const setClock = (iso?: string) =>
+  api("POST", "/admin/clock" + (iso ? `?now=${iso}` : ""));
+
+// the seed's departures: NDLS 16:00 IST (10:30 UTC), CNB 22:00 IST (16:30 UTC)
+export function hoursBefore(
+  date: string,
+  hours: number,
+  from: "NDLS" | "CNB" = "NDLS",
+) {
+  const departs = Date.parse(
+    `${date}T${from === "NDLS" ? "10:30" : "16:30"}:00Z`,
+  );
+  return new Date(departs - hours * 3_600_000).toISOString();
+}
+
+// book + pay + bank confirms
+export async function bookConfirmed(o: BookOpts = {}) {
+  const { id, ref } = await bookAndStartPayment(o);
+  await bankPay(ref);
+  return { id, ref };
+}
+
+// ask for the waiting list + pay: the booking ends up waitlisted (when the class is full)
+export async function bookWaitlisted(o: BookOpts = {}) {
+  const { id, ref } = await bookAndStartPayment({ ...o, waitlist: true });
+  await bankPay(ref);
+  return { id, ref };
+}
 
 export async function avail(
   date: string,

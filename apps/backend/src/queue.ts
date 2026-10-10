@@ -30,13 +30,19 @@ export const notifyQueue = new Queue("notifications", {
 notifyQueue.on("error", () => {});
 
 function messageFor(type: string, p: any): string {
+  const rupees = (paise: number) => (paise / 100).toFixed(2);
   if (type === "booking_confirmed") {
     const seats = p.seats.map((s: any) => `${s.coach}-${s.seat}`).join(", ");
     return `Booking confirmed: train ${p.trainNumber} on ${p.date}. Seats: ${seats}.`;
   }
-  if (type === "refund_issued") {
-    return `Refund of Rs ${(p.amountPaise / 100).toFixed(2)} has been issued for your booking.`;
-  }
+  if (type === "refund_issued")
+    return `Refund of Rs ${rupees(p.amountPaise)} has been issued for your booking.`;
+  if (type === "booking_waitlisted")
+    return "Payment received. You are on the waiting list, and we will confirm you if a seat opens up.";
+  if (type === "booking_cancelled")
+    return p.refundPaise > 0
+      ? `Booking cancelled. Your refund of Rs ${rupees(p.refundPaise)} is being processed.`
+      : "Booking cancelled. No refund is due this close to departure.";
   return "There is an update on your booking.";
 }
 

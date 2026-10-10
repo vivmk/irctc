@@ -13,6 +13,7 @@ import { releaseSeats } from "./seats";
 import { verify } from "./signature";
 import { bankRefund, bankStatus, createBankTransaction } from "./fakebank";
 import { addOutbox, confirmationPayload } from "./outbox";
+import { promoteWaitlist } from "./waitlist";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
   code,
@@ -66,6 +67,7 @@ export async function applyBankResult(
 ): Promise<string> {
   const client = await pool.connect();
   let outcome: string;
+  let waitlistedIn = null as { runId: number; cls: string } | null;
   try {
     await client.query("begin");
 
@@ -79,14 +81,13 @@ export async function applyBankResult(
     }
     const pay = p.rows[0];
 
-    // already handled (webhook came twice, or reconciler got here first): do nothing
     if (pay.status !== "initiated") {
       await client.query("rollback");
       return "already_processed";
     }
 
     const bk = await client.query(
-      "select id, stage from bookings where id = $1 for update",
+      "select id, stage, run_id, class, waitlist_requested from bookings where id = $1 for update",
       [pay.booking_id],
     );
     const booking = bk.rows[0];
@@ -106,6 +107,25 @@ export async function applyBankResult(
         await releaseSeats(client, booking.id);
       }
       outcome = "payment_failed";
+    } else if (
+      booking.stage === "payment_pending" &&
+      booking.waitlist_requested
+    ) {
+      // no seats were ever held: the customer joins the waiting list
+      await client.query(
+        "update payments set status = 'succeeded', updated_at = now() where id = $1",
+        [pay.id],
+      );
+      await moveStage(client, booking.id, "payment_pending", "waitlisted");
+      await client.query(
+        "update bookings set hold_expires_at = null, waitlisted_at = now() where id = $1",
+        [booking.id],
+      );
+      await addOutbox(client, booking.id, "booking_waitlisted", {
+        bookingId: booking.id,
+      });
+      waitlistedIn = { runId: booking.run_id, cls: booking.class };
+      outcome = "waitlisted";
     } else {
       const seatsOk =
         booking.stage === "payment_pending" &&
@@ -136,7 +156,7 @@ export async function applyBankResult(
         if (booking.stage === "payment_pending") {
           await moveStage(client, booking.id, "payment_pending", "expired");
         }
-        await releaseSeats(client, booking.id); // give back any seats we still held
+        await releaseSeats(client, booking.id);
         outcome = "refund_pending";
       }
     }
@@ -148,29 +168,34 @@ export async function applyBankResult(
     client.release();
   }
 
-  // talking to the bank happens AFTER our database step is safely saved
+  // talking to the bank, or the waiting list, happens AFTER our database step is saved
   if (outcome === "refund_pending") await processRefunds().catch(() => {});
+  if (waitlistedIn)
+    await promoteWaitlist(waitlistedIn.runId, waitlistedIn.cls).catch(() => {});
   return outcome;
 }
 
 // Ask the bank to return money for every payment waiting for a refund.
 export async function processRefunds() {
   const due = await pool.query(
-    "select id, booking_id, provider_ref, amount_paise from payments where status = 'refund_pending'",
+    `select id, booking_id, provider_ref,
+            coalesce(refund_amount_paise, amount_paise) as refund_paise
+     from payments where status = 'refund_pending'`,
   );
   for (const row of due.rows) {
-    await bankRefund(row.provider_ref);
+    await bankRefund(row.provider_ref, row.refund_paise);
     const client = await pool.connect();
     try {
       await client.query("begin");
       const done = await client.query(
-        "update payments set status = 'refunded', updated_at = now() where id = $1 and status = 'refund_pending'",
-        [row.id],
+        `update payments set status = 'refunded', refund_amount_paise = $2, updated_at = now()
+         where id = $1 and status = 'refund_pending'`,
+        [row.id, row.refund_paise],
       );
       if (done.rowCount === 1) {
         await addOutbox(client, row.booking_id, "refund_issued", {
           bookingId: row.booking_id,
-          amountPaise: row.amount_paise,
+          amountPaise: row.refund_paise,
         });
       }
       await client.query("commit");

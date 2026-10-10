@@ -1,6 +1,10 @@
 import type { PoolClient } from "pg";
 
-export type OutboxType = "booking_confirmed" | "refund_issued";
+export type OutboxType =
+  | "booking_confirmed"
+  | "refund_issued"
+  | "booking_waitlisted"
+  | "booking_cancelled";
 
 // ON CONFLICT DO NOTHING: asking twice for the same note creates it once
 export async function addOutbox(

@@ -20,6 +20,7 @@ export async function startServer(
       PORT: String(port),
       HOLD_SECONDS: "3",
       RECONCILE_AFTER_SECONDS: "3600",
+      WAITLIST_EVERY_SECONDS: "3600",
       ENABLE_FAKE_BANK: "true",
       BANK_SECRET: "test-secret",
       QUEUE_PREFIX: "irctc-test", // same queue and locks as the main test server = "two copies"

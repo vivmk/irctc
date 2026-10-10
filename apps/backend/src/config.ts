@@ -17,4 +17,6 @@ export const config = {
   notifyAttempts: Number(process.env.NOTIFY_ATTEMPTS ?? 5),
   notifyBackoffMs: Number(process.env.NOTIFY_BACKOFF_MS ?? 2000),
   reconcileEverySeconds: Number(process.env.RECONCILE_EVERY_SECONDS ?? 30),
+  cancelFeePaise: Number(process.env.CANCEL_FEE_PAISE ?? 6000), // per passenger
+  waitlistEverySeconds: Number(process.env.WAITLIST_EVERY_SECONDS ?? 5),
 };

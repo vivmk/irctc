@@ -10,6 +10,8 @@ import {
   resetDb,
   stage,
   waitFor,
+  bookConfirmed,
+  bookWaitlisted,
 } from "./helpers";
 import { startServer, stopServer, type Copy } from "./server";
 
@@ -20,6 +22,7 @@ beforeAll(async () => {
     SWEEP_EVERY_SECONDS: "1",
     RECONCILE_EVERY_SECONDS: "1",
     RECONCILE_AFTER_SECONDS: "1",
+    WAITLIST_EVERY_SECONDS: "1",
   });
 });
 afterAll(async () => {
@@ -72,5 +75,38 @@ describe("shutdown", () => {
   it("exits cleanly with code 0 when asked to stop", async () => {
     const extra = await startServer(3103);
     expect(await stopServer(extra.child)).toBe(0);
+  });
+});
+
+describe("waiting list job", () => {
+  it("promotes someone when a seat frees up with no cancellation at all", async () => {
+    await bookConfirmed({ cls: "SL", pax: 6 });
+    await bookConfirmed({ cls: "SL" });
+    const unpaid = await book({ cls: "SL" }); // takes the last seat, never pays
+    const uid = unpaid.body.bookingId;
+    // keep that hold alive while the waiting booking is set up
+    await db.query(
+      "update seat_segments set held_until = now() + interval '1 hour' where booking_id = $1",
+      [uid],
+    );
+    await db.query(
+      "update bookings set hold_expires_at = now() + interval '1 hour' where id = $1",
+      [uid],
+    );
+
+    const w = await bookWaitlisted({ cls: "SL" });
+    expect(await stage(w.id)).toBe("waitlisted");
+
+    // now let the unpaid hold run out; the background jobs should do the rest
+    await db.query(
+      "update seat_segments set held_until = now() - interval '1 second' where booking_id = $1",
+      [uid],
+    );
+    await db.query(
+      "update bookings set hold_expires_at = now() - interval '1 second' where id = $1",
+      [uid],
+    );
+
+    await waitFor(async () => (await stage(w.id)) === "confirmed", 15_000);
   });
 });
