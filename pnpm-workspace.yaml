@@ -4,6 +4,4 @@ packages:
 
 allowBuilds:
   esbuild: true
-
-onlyBuiltDependencies:
-  - esbuild
+  msgpackr-extract: true

@@ -12,6 +12,7 @@ import { moveStage } from "./stages";
 import { releaseSeats } from "./seats";
 import { verify } from "./signature";
 import { bankRefund, bankStatus, createBankTransaction } from "./fakebank";
+import { addOutbox, confirmationPayload } from "./outbox";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
   code,
@@ -119,6 +120,12 @@ export async function applyBankResult(
           "update bookings set hold_expires_at = null where id = $1",
           [booking.id],
         );
+        await addOutbox(
+          client,
+          booking.id,
+          "booking_confirmed",
+          await confirmationPayload(client, booking.id),
+        );
         outcome = "confirmed";
       } else {
         // money arrived but the seats are gone: mark for refund
@@ -149,14 +156,30 @@ export async function applyBankResult(
 // Ask the bank to return money for every payment waiting for a refund.
 export async function processRefunds() {
   const due = await pool.query(
-    "select id, provider_ref from payments where status = 'refund_pending'",
+    "select id, booking_id, provider_ref, amount_paise from payments where status = 'refund_pending'",
   );
   for (const row of due.rows) {
     await bankRefund(row.provider_ref);
-    await pool.query(
-      "update payments set status = 'refunded', updated_at = now() where id = $1 and status = 'refund_pending'",
-      [row.id],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const done = await client.query(
+        "update payments set status = 'refunded', updated_at = now() where id = $1 and status = 'refund_pending'",
+        [row.id],
+      );
+      if (done.rowCount === 1) {
+        await addOutbox(client, row.booking_id, "refund_issued", {
+          bookingId: row.booking_id,
+          amountPaise: row.amount_paise,
+        });
+      }
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -210,6 +233,19 @@ export async function paymentRoutes(app: FastifyInstance) {
         if (existing.rowCount! > 0) {
           await client.query("rollback");
           return reply.code(200).send(toResponse(id, existing.rows[0]));
+        }
+
+        if (b.stage === "expired") {
+          await client.query("rollback");
+          return reply
+            .code(409)
+            .send(
+              err(
+                "HOLD_EXPIRED",
+                "Your seat hold ran out. Please search again.",
+                false,
+              ),
+            );
         }
 
         if (b.stage !== "seats_held") {

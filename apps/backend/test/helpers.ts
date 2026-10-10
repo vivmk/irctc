@@ -10,11 +10,38 @@ export async function resetDb() {
   await db.query(
     "update seat_segments set status='free', booking_id=null, held_until=null",
   );
+  await db.query("delete from notification_log");
+  await db.query("delete from outbox");
   await db.query("delete from payments");
   await db.query("delete from booking_passengers");
   await db.query("delete from bookings");
   await db.query("delete from fake_bank_transactions");
 }
+
+export async function waitFor(
+  check: () => Promise<boolean>,
+  timeoutMs = 10_000,
+) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (await check()) return;
+    await sleep(200);
+  }
+  throw new Error("timed out waiting for condition");
+}
+
+export const sweep = () => api("POST", "/admin/sweep");
+
+export const notifications = async (bookingId: string) =>
+  (await api("GET", `/admin/notifications/${bookingId}`)).body as {
+    events: {
+      type: string;
+      status: string;
+      attempts: number;
+      lastError: string | null;
+    }[];
+    delivered: { channel: string; body: string }[];
+  };
 
 export async function api(method: string, path: string, body?: unknown) {
   const res = await fetch(BASE + path, {

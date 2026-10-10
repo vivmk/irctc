@@ -14,6 +14,11 @@ const env = {
   RECONCILE_AFTER_SECONDS: "3600", // the background job stays out of the way; tests trigger it by hand
   ENABLE_FAKE_BANK: "true",
   BANK_SECRET: "test-secret",
+  QUEUE_PREFIX: "irctc-test", // own queue, separate from dev
+  SWEEP_EVERY_SECONDS: "3600", // tests run the sweeper by hand
+  RELAY_EVERY_SECONDS: "1",
+  NOTIFY_ATTEMPTS: "8",
+  NOTIFY_BACKOFF_MS: "200", // fast retries
 };
 
 function runScript(file: string) {

@@ -11,4 +11,9 @@ export const config = {
   farePaise: Number(process.env.FARE_PAISE ?? 50000), // Rs 500 per passenger
   reconcileAfterSeconds: Number(process.env.RECONCILE_AFTER_SECONDS ?? 60),
   enableFakeBank: process.env.ENABLE_FAKE_BANK !== "false",
+  queuePrefix: process.env.QUEUE_PREFIX ?? "irctc",
+  sweepEverySeconds: Number(process.env.SWEEP_EVERY_SECONDS ?? 30),
+  relayEverySeconds: Number(process.env.RELAY_EVERY_SECONDS ?? 2),
+  notifyAttempts: Number(process.env.NOTIFY_ATTEMPTS ?? 5),
+  notifyBackoffMs: Number(process.env.NOTIFY_BACKOFF_MS ?? 2000),
 };
