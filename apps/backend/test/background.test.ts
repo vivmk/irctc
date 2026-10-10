@@ -61,6 +61,27 @@ describe("sweeper (hold timeout is 3 seconds in tests)", () => {
 });
 
 describe("notifications", () => {
+  it("sms down for good: the booking still confirms instantly, and the note ends up dead", async () => {
+    await api("POST", "/admin/sms?down=true");
+    const { id, ref } = await bookAndStartPayment();
+    await bankPay(ref);
+    expect(await stage(id)).toBe("confirmed"); // notification trouble never slows the booking
+
+    await waitFor(
+      async () => (await notifications(id)).events[0]?.attempts >= 3,
+      15_000,
+    ); // attempts climb
+    await waitFor(
+      async () => (await notifications(id)).events[0]?.status === "dead",
+      40_000,
+    );
+
+    const n = await notifications(id);
+    expect(n.events[0].attempts).toBe(8);
+    expect(n.events[0].lastError).toMatch(/SMS provider/);
+    expect(n.delivered.map((d) => d.channel)).toEqual(["email"]); // email got through, sms never did
+  }, 60_000);
+
   it("a confirmed booking gets one note, delivered by email and sms", async () => {
     const { id, ref } = await bookAndStartPayment();
     await bankPay(ref);
@@ -105,27 +126,6 @@ describe("notifications", () => {
     expect(n.delivered.map((d) => d.channel).sort()).toEqual(["email", "sms"]);
     expect(n.events[0].attempts).toBeGreaterThan(1);
   });
-
-  it("sms down for good: the booking still confirms instantly, and the note ends up dead", async () => {
-    await api("POST", "/admin/sms?down=true");
-    const { id, ref } = await bookAndStartPayment();
-    await bankPay(ref);
-    expect(await stage(id)).toBe("confirmed"); // notification trouble never slows the booking
-
-    await waitFor(
-      async () => (await notifications(id)).events[0]?.attempts >= 3,
-      15_000,
-    );
-    await waitFor(
-      async () => (await notifications(id)).events[0]?.status === "dead",
-      40_000,
-    );
-
-    const n = await notifications(id);
-    expect(n.events[0].attempts).toBe(8);
-    expect(n.events[0].lastError).toMatch(/SMS provider/);
-    expect(n.delivered.map((d) => d.channel)).toEqual(["email"]);
-  }, 60_000);
 
   it("an automatic refund sends a refund message", async () => {
     const a = await book({ cls: "SL", pax: 6 });
