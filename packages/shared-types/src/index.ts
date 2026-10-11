@@ -1,3 +1,20 @@
+export type AuthResponse = {
+  token: string;
+  expiresAt: string;
+  user: { id: string; email: string; phone: string };
+};
+
+export type BookingSummary = {
+  bookingId: string;
+  stage: BookingStage;
+  trainNumber: string;
+  date: string;
+  from: string;
+  to: string;
+  passengers: number;
+  createdAt: string;
+};
+
 export type PaymentStatus =
   | "initiated"
   | "succeeded"

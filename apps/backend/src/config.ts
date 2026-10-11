@@ -19,4 +19,7 @@ export const config = {
   reconcileEverySeconds: Number(process.env.RECONCILE_EVERY_SECONDS ?? 30),
   cancelFeePaise: Number(process.env.CANCEL_FEE_PAISE ?? 6000), // per passenger
   waitlistEverySeconds: Number(process.env.WAITLIST_EVERY_SECONDS ?? 5),
+  sessionHours: Number(process.env.SESSION_HOURS ?? 24),
+  loginMaxFailures: Number(process.env.LOGIN_MAX_FAILURES ?? 5),
+  loginWindowSeconds: Number(process.env.LOGIN_WINDOW_SECONDS ?? 900),
 };

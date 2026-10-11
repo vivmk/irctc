@@ -45,6 +45,7 @@ export async function resetDb() {
   await db.query("delete from booking_passengers");
   await db.query("delete from bookings");
   await db.query("delete from fake_bank_transactions");
+  await useDefaultUser();
 }
 
 export async function waitFor(
@@ -72,14 +73,56 @@ export const notifications = async (bookingId: string) =>
     delivered: { channel: string; body: string }[];
   };
 
-export async function api(method: string, path: string, body?: unknown) {
+let token: string | null = null;
+export const DEFAULT_EMAIL = "default-tester@example.com";
+export const DEFAULT_PHONE = "9000000001";
+export const PASSWORD = "correct-horse-battery";
+
+// 4th argument: undefined = the default test user, null = nobody logged in, or a specific token
+export async function api(
+  method: string,
+  path: string,
+  body?: unknown,
+  as?: string | null,
+) {
+  const t = as === undefined ? token : as;
   const res = await fetch(BASE + path, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...(t ? { authorization: `Bearer ${t}` } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json: any = await res.json().catch(() => null);
   return { status: res.status, body: json };
+}
+
+// log in once per test file as the default user (creating the account the first time ever)
+export async function useDefaultUser() {
+  if (token) return;
+  const creds = { email: DEFAULT_EMAIL, password: PASSWORD };
+  let r = await api("POST", "/auth/login", creds, null);
+  if (r.status !== 200)
+    r = await api(
+      "POST",
+      "/auth/signup",
+      { ...creds, phone: DEFAULT_PHONE },
+      null,
+    );
+  token = r.body.token;
+}
+
+// a brand-new person, to test "someone else"
+export async function newUser() {
+  const email = `u-${randomUUID()}@example.com`;
+  const r = await api(
+    "POST",
+    "/auth/signup",
+    { email, phone: "9111111111", password: PASSWORD },
+    null,
+  );
+  return { token: r.body.token as string, email };
 }
 
 type BookOpts = {
@@ -90,23 +133,29 @@ type BookOpts = {
   waitlist?: boolean;
   from?: string;
   to?: string;
+  as?: string | null;
 };
 
 export const book = (o: BookOpts = {}) =>
-  api("POST", "/bookings", {
-    requestId: o.requestId ?? randomUUID(),
-    trainNumber: "12345",
-    date: o.date ?? "2026-12-27",
-    from: o.from ?? "NDLS",
-    to: o.to ?? "PNBE",
-    class: o.cls ?? "3A",
-    passengers: Array.from({ length: o.pax ?? 1 }, (_, i) => ({
-      name: `P${i + 1}`,
-      age: 30,
-      gender: "male",
-    })),
-    ...(o.waitlist ? { waitlistIfFull: true } : {}),
-  });
+  api(
+    "POST",
+    "/bookings",
+    {
+      requestId: o.requestId ?? randomUUID(),
+      trainNumber: "12345",
+      date: o.date ?? "2026-12-27",
+      from: o.from ?? "NDLS",
+      to: o.to ?? "PNBE",
+      class: o.cls ?? "3A",
+      passengers: Array.from({ length: o.pax ?? 1 }, (_, i) => ({
+        name: `P${i + 1}`,
+        age: 30,
+        gender: "male",
+      })),
+      ...(o.waitlist ? { waitlistIfFull: true } : {}),
+    },
+    o.as,
+  );
 
 export const cancel = (id: string) => api("POST", `/bookings/${id}/cancel`);
 export const promote = () => api("POST", "/admin/promote");

@@ -14,6 +14,7 @@ import { verify } from "./signature";
 import { bankRefund, bankStatus, createBankTransaction } from "./fakebank";
 import { addOutbox, confirmationPayload } from "./outbox";
 import { promoteWaitlist } from "./waitlist";
+import { ownedBy, requireUser } from "./auth";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
   code,
@@ -228,12 +229,18 @@ export async function paymentRoutes(app: FastifyInstance) {
   // 1. start paying for a held booking
   app.post<{ Params: { id: string } }>(
     "/bookings/:id/pay",
+    { preHandler: requireUser },
     async (req, reply) => {
       const id = req.params.id;
       if (!UUID.test(id))
         return reply
           .code(400)
           .send(err("BAD_REQUEST", "id must be a uuid", false));
+
+      if (!(await ownedBy(id, req.userId!)))
+        return reply
+          .code(404)
+          .send(err("NOT_FOUND", "Booking not found", false));
 
       const client = await pool.connect();
       try {
@@ -324,11 +331,18 @@ export async function paymentRoutes(app: FastifyInstance) {
   // 2. what is the payment status of this booking?
   app.get<{ Params: { id: string } }>(
     "/bookings/:id/payment",
+    { preHandler: requireUser },
     async (req, reply) => {
       if (!UUID.test(req.params.id))
         return reply
           .code(400)
           .send(err("BAD_REQUEST", "id must be a uuid", false));
+
+      if (!(await ownedBy(req.params.id, req.userId!)))
+        return reply
+          .code(404)
+          .send(err("NOT_FOUND", "Booking not found", false));
+
       const r = await pool.query(
         "select id, provider_ref, amount_paise, status from payments where booking_id = $1",
         [req.params.id],

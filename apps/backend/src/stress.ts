@@ -6,7 +6,10 @@ const N = Number(process.env.N ?? 1000);
 async function oneAttempt(): Promise<number> {
   const res = await fetch(`${BASE}/bookings`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${process.env.TOKEN}`,
+    },
     body: JSON.stringify({
       requestId: randomUUID(),
       trainNumber: "12345",

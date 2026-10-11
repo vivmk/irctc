@@ -12,6 +12,7 @@ import { addOutbox } from "./outbox";
 import { refundFor } from "./refund";
 import { processRefunds } from "./payments";
 import { promoteWaitlist } from "./waitlist";
+import { ownedBy, requireUser } from "./auth";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
   code,
@@ -44,12 +45,18 @@ async function summary(id: string): Promise<CancelResponse> {
 export async function cancelRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>(
     "/bookings/:id/cancel",
+    { preHandler: requireUser },
     async (req, reply) => {
       const id = req.params.id;
       if (!UUID.test(id))
         return reply
           .code(400)
           .send(err("BAD_REQUEST", "id must be a uuid", false));
+
+      if (!(await ownedBy(id, req.userId!)))
+        return reply
+          .code(404)
+          .send(err("NOT_FOUND", "Booking not found", false));
 
       let freed: { runId: number; cls: string } | null = null;
       const client = await pool.connect();

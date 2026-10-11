@@ -14,6 +14,7 @@ import { startWorker, notifyQueue } from "./queue";
 import { pool } from "./db";
 import { redis } from "./redis";
 import { cancelRoutes } from "./cancel";
+import { authRoutes } from "./auth";
 
 const app = Fastify({ logger: true });
 
@@ -22,6 +23,7 @@ await app.register(availabilityRoutes);
 await app.register(bookingRoutes);
 await app.register(paymentRoutes);
 await app.register(cancelRoutes);
+await app.register(authRoutes);
 
 if (config.enableFakeBank) {
   await app.register(fakeBankRoutes);

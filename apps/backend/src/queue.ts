@@ -54,6 +54,18 @@ async function deliver(outboxId: string, attempt: number) {
   if (o.rowCount === 0 || o.rows[0].status === "sent") return; // nothing to do
   const body = messageFor(o.rows[0].type, o.rows[0].payload);
 
+  const contact = await pool.query(
+    `select u.email, u.phone from outbox o
+     join bookings b on b.id = o.booking_id
+     left join users u on u.id = b.user_id
+     where o.id = $1`,
+    [outboxId],
+  );
+  const to: Record<string, string> = {
+    email: contact.rows[0]?.email ?? RECIPIENT, // older bookings with no owner keep the placeholder
+    sms: contact.rows[0]?.phone ?? RECIPIENT,
+  };
+
   const channels = [
     { name: "email", send: sendEmail },
     { name: "sms", send: sendSms },
@@ -66,11 +78,11 @@ async function deliver(outboxId: string, attempt: number) {
     );
     if (done.rowCount) continue;
 
-    await ch.send(RECIPIENT, body); // throws if the provider is down
+    await ch.send(to[ch.name], body); // throws if the provider is down
     await pool.query(
       `insert into notification_log (outbox_id, channel, recipient, body)
        values ($1, $2, $3, $4) on conflict do nothing`,
-      [outboxId, ch.name, RECIPIENT, body],
+      [outboxId, ch.name, to[ch.name], body],
     );
   }
   await pool.query(

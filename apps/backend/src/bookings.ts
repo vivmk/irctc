@@ -9,6 +9,7 @@ import type {
 import { pool } from "./db";
 import { config } from "./config";
 import { resolveJourney } from "./journey";
+import { ownedBy, requireUser } from "./auth";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
   code,
@@ -152,133 +153,161 @@ export async function grabOneSeat(
 }
 
 export async function bookingRoutes(app: FastifyInstance) {
-  app.post<{ Body: BookingRequest }>("/bookings", async (req, reply) => {
-    const problem = validate(req.body);
-    if (problem)
-      return reply.code(400).send(err("BAD_REQUEST", problem, false));
-    const b = req.body;
+  app.post<{ Body: BookingRequest }>(
+    "/bookings",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const problem = validate(req.body);
+      if (problem)
+        return reply.code(400).send(err("BAD_REQUEST", problem, false));
+      const b = req.body;
 
-    const journey = await resolveJourney(
-      pool,
-      b.trainNumber,
-      b.date,
-      b.from,
-      b.to,
-    );
-    if (journey === "BAD_STATIONS")
-      return reply
-        .code(400)
-        .send(
-          err(
-            "BAD_REQUEST",
-            "stations not on this train, or in the wrong order",
-            false,
-          ),
-        );
-    if (journey === "NO_RUN")
-      return reply
-        .code(404)
-        .send(err("NO_RUN", "Train does not run on that date", false));
+      const journey = await resolveJourney(
+        pool,
+        b.trainNumber,
+        b.date,
+        b.from,
+        b.to,
+      );
+      if (journey === "BAD_STATIONS")
+        return reply
+          .code(400)
+          .send(
+            err(
+              "BAD_REQUEST",
+              "stations not on this train, or in the wrong order",
+              false,
+            ),
+          );
+      if (journey === "NO_RUN")
+        return reply
+          .code(404)
+          .send(err("NO_RUN", "Train does not run on that date", false));
 
-    const client = await pool.connect();
-    try {
-      await client.query("begin");
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
 
-      // 1. create the booking. If this requestId already exists, nothing is inserted.
-      const created = await client.query(
-        `insert into bookings (request_id, run_id, class, first_segment, last_segment,
+        // 1. create the booking. If this requestId already exists, nothing is inserted.
+        const created = await client.query(
+          `insert into bookings (request_id, user_id, run_id, class, first_segment, last_segment,
                                stage, hold_expires_at)
-         values ($1, $2, $3, $4, $5, 'seats_held',
-                 now() + make_interval(secs => $6::double precision))
+         values ($1, $2, $3, $4, $5, $6, 'seats_held',
+                 now() + make_interval(secs => $7::double precision))
          on conflict (request_id) do nothing
          returning id`,
-        [
-          b.requestId,
-          journey.runId,
-          b.class,
-          journey.first,
-          journey.last,
-          config.holdSeconds,
-        ],
-      );
-
-      // 2. seen before? hand back the earlier result, change nothing
-      if (created.rowCount === 0) {
-        await client.query("rollback");
-        const prev = await client.query(
-          "select id from bookings where request_id = $1",
-          [b.requestId],
+          [
+            b.requestId,
+            req.userId,
+            journey.runId,
+            b.class,
+            journey.first,
+            journey.last,
+            config.holdSeconds,
+          ],
         );
-        return reply.code(200).send(await loadBooking(client, prev.rows[0].id));
-      }
-      const bookingId: string = created.rows[0].id;
 
-      // 3. one seat per passenger, all inside this same all-or-nothing step
-      // 3. one seat per passenger, all inside this same all-or-nothing step
-      await client.query("savepoint seats"); // a bookmark we can roll back to
-      let gotAll = true;
-      for (let i = 0; i < b.passengers.length; i++) {
-        const seat = await grabOneSeat(client, {
-          runId: journey.runId,
-          cls: b.class,
-          first: journey.first,
-          last: journey.last,
-          bookingId,
-        });
-        if (!seat) {
-          gotAll = false;
-          break;
-        }
-        const p = b.passengers[i];
-        await client.query(
-          `insert into booking_passengers
-             (booking_id, position, name, age, gender, coach_code, seat_number)
-           values ($1, $2, $3, $4, $5, $6, $7)`,
-          [bookingId, i + 1, p.name, p.age, p.gender, seat.coach, seat.seat],
-        );
-      }
-
-      if (!gotAll) {
-        if (!b.waitlistIfFull) {
-          await client.query("rollback"); // release everything we grabbed so far
+        // 2. seen before? hand back the earlier result, change nothing
+        if (created.rowCount === 0) {
+          await client.query("rollback");
+          const prev = await client.query(
+            "select id, user_id from bookings where request_id = $1",
+            [b.requestId],
+          );
+          // someone else's request id must never leak their booking
+          if (prev.rows[0].user_id !== req.userId)
+            return reply
+              .code(409)
+              .send(
+                err(
+                  "REQUEST_ID_TAKEN",
+                  "This requestId was already used",
+                  false,
+                ),
+              );
           return reply
-            .code(409)
-            .send(err("SOLD_OUT", "Not enough seats available", false));
+            .code(200)
+            .send(await loadBooking(client, prev.rows[0].id));
         }
-        // give back any seats grabbed so far, and record the passengers without seats
-        await client.query("rollback to savepoint seats");
+        const bookingId: string = created.rows[0].id;
+
+        // 3. one seat per passenger, all inside this same all-or-nothing step
+        // 3. one seat per passenger, all inside this same all-or-nothing step
+        await client.query("savepoint seats"); // a bookmark we can roll back to
+        let gotAll = true;
         for (let i = 0; i < b.passengers.length; i++) {
+          const seat = await grabOneSeat(client, {
+            runId: journey.runId,
+            cls: b.class,
+            first: journey.first,
+            last: journey.last,
+            bookingId,
+          });
+          if (!seat) {
+            gotAll = false;
+            break;
+          }
           const p = b.passengers[i];
           await client.query(
-            `insert into booking_passengers (booking_id, position, name, age, gender)
-             values ($1, $2, $3, $4, $5)`,
-            [bookingId, i + 1, p.name, p.age, p.gender],
+            `insert into booking_passengers
+             (booking_id, position, name, age, gender, coach_code, seat_number)
+           values ($1, $2, $3, $4, $5, $6, $7)`,
+            [bookingId, i + 1, p.name, p.age, p.gender, seat.coach, seat.seat],
           );
         }
-        await client.query(
-          "update bookings set waitlist_requested = true where id = $1",
-          [bookingId],
-        );
+
+        if (!gotAll) {
+          if (!b.waitlistIfFull) {
+            await client.query("rollback"); // release everything we grabbed so far
+            return reply
+              .code(409)
+              .send(err("SOLD_OUT", "Not enough seats available", false));
+          }
+          // give back any seats grabbed so far, and record the passengers without seats
+          await client.query("rollback to savepoint seats");
+          for (let i = 0; i < b.passengers.length; i++) {
+            const p = b.passengers[i];
+            await client.query(
+              `insert into booking_passengers (booking_id, position, name, age, gender)
+             values ($1, $2, $3, $4, $5)`,
+              [bookingId, i + 1, p.name, p.age, p.gender],
+            );
+          }
+          await client.query(
+            "update bookings set waitlist_requested = true where id = $1",
+            [bookingId],
+          );
+        }
+
+        await client.query("commit");
+        return reply.code(201).send(await loadBooking(client, bookingId));
+      } catch (e) {
+        await client.query("rollback").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
       }
+    },
+  );
 
-      await client.query("commit");
-      return reply.code(201).send(await loadBooking(client, bookingId));
-    } catch (e) {
-      await client.query("rollback").catch(() => {});
-      throw e;
-    } finally {
-      client.release();
-    }
-  });
-
-  app.get<{ Params: { id: string } }>("/bookings/:id", async (req, reply) => {
-    if (!UUID.test(req.params.id))
-      return reply
-        .code(400)
-        .send(err("BAD_REQUEST", "id must be a uuid", false));
-    const booking = await loadBooking(pool, req.params.id);
-    if (!booking)
-      return reply.code(404).send(err("NOT_FOUND", "Booking not found", false));
-    return booking;
-  });
+  app.get<{ Params: { id: string } }>(
+    "/bookings/:id",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      if (!UUID.test(req.params.id))
+        return reply
+          .code(400)
+          .send(err("BAD_REQUEST", "id must be a uuid", false));
+      if (!(await ownedBy(req.params.id, req.userId!)))
+        return reply
+          .code(404)
+          .send(err("NOT_FOUND", "Booking not found", false));
+      const booking = await loadBooking(pool, req.params.id);
+      if (!booking)
+        return reply
+          .code(404)
+          .send(err("NOT_FOUND", "Booking not found", false));
+      return booking;
+    },
+  );
 }
