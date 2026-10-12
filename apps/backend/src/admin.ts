@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db";
 import { setSmsDown } from "./providers";
 import { sweepExpiredHolds } from "./sweeper";
-import { setClock } from "./clock";
+import { clockIsOverridden, clockNow, setClock } from "./clock";
 import { promoteAllWaitlists } from "./waitlist";
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -40,6 +40,11 @@ export async function adminRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  app.get("/admin/clock", async () => ({
+    overridden: clockIsOverridden(),
+    now: new Date(clockNow()).toISOString(),
+  }));
 
   app.post("/admin/promote", async () => ({
     promoted: await promoteAllWaitlists(),

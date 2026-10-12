@@ -53,13 +53,14 @@ export async function cancelRoutes(app: FastifyInstance) {
           .code(400)
           .send(err("BAD_REQUEST", "id must be a uuid", false));
 
-      if (!(await ownedBy(id, req.userId!)))
+      if (!(await ownedBy(req.params.id, req.userId!)))
         return reply
           .code(404)
           .send(err("NOT_FOUND", "Booking not found", false));
 
       let freed: { runId: number; cls: string } | null = null;
       const client = await pool.connect();
+      let released = false;
       try {
         await client.query("begin");
         const bk = await client.query(
@@ -77,6 +78,9 @@ export async function cancelRoutes(app: FastifyInstance) {
         // cancelling twice gives the same answer and does nothing the second time
         if (b.stage === "cancelled") {
           await client.query("rollback");
+          released = true;
+          client.release(); // give the connection back BEFORE asking the pool for more
+          await processRefunds().catch(() => {}); // also retries a refund that failed earlier
           return reply.code(200).send(await summary(id));
         }
         if (b.stage !== "confirmed" && b.stage !== "waitlisted") {
@@ -154,7 +158,7 @@ export async function cancelRoutes(app: FastifyInstance) {
         await client.query("rollback").catch(() => {});
         throw e;
       } finally {
-        client.release();
+        if (!released) client.release();
       }
 
       // after the commit. Both are safe to repeat, and the scheduled jobs back them up.

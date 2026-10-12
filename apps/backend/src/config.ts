@@ -21,5 +21,7 @@ export const config = {
   waitlistEverySeconds: Number(process.env.WAITLIST_EVERY_SECONDS ?? 5),
   sessionHours: Number(process.env.SESSION_HOURS ?? 24),
   loginMaxFailures: Number(process.env.LOGIN_MAX_FAILURES ?? 5),
+  requeueAfterSeconds: Number(process.env.REQUEUE_AFTER_SECONDS ?? 120),
+  logLevel: process.env.LOG_LEVEL ?? "info",
   loginWindowSeconds: Number(process.env.LOGIN_WINDOW_SECONDS ?? 900),
 };

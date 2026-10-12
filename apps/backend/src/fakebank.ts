@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
+import type { Pool } from "pg";
 import { pool } from "./db";
 import { config } from "./config";
 import { sign } from "./signature";
 
 // ---- what OUR code is allowed to ask the bank ----
-export async function createBankTransaction(ref: string, amountPaise: number) {
-  await pool.query(
+export async function createBankTransaction(
+  ref: string,
+  amountPaise: number,
+  db: Pick<Pool, "query"> = pool,
+) {
+  await db.query(
     "insert into fake_bank_transactions (ref, amount_paise) values ($1, $2)",
     [ref, amountPaise],
   );

@@ -3,7 +3,7 @@ import { config } from "./config";
 import { withLock } from "./lock";
 import { reconcileOnce } from "./payments";
 import { sweepExpiredHolds } from "./sweeper";
-import { relayOutbox } from "./queue";
+import { relayOutbox, requeueStuck } from "./queue";
 import { promoteAllWaitlists } from "./waitlist";
 import { pool } from "./db";
 
@@ -29,6 +29,7 @@ export function startScheduler(log: FastifyBaseLogger) {
     ),
     every(config.sweepEverySeconds, "sweep", sweepExpiredHolds),
     every(config.relayEverySeconds, "relay", relayOutbox),
+    every(Math.max(config.relayEverySeconds * 5, 5), "requeue", requeueStuck),
     every(config.waitlistEverySeconds, "waitlist", promoteAllWaitlists),
   ];
   return () => timers.forEach(clearInterval);

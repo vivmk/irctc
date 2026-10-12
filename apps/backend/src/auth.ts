@@ -35,7 +35,7 @@ export async function hashPassword(password: string): Promise<string> {
   return `${salt.toString("hex")}:${key.toString("hex")}`;
 }
 
-async function checkPassword(
+export async function checkPassword(
   password: string,
   stored: string,
 ): Promise<boolean> {
@@ -53,8 +53,8 @@ const hashToken = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
 function tokenFrom(req: FastifyRequest): string | null {
-  const h = req.headers.authorization;
-  return h && h.startsWith("Bearer ") ? h.slice(7).trim() || null : null;
+  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "");
+  return m ? m[1] : null;
 }
 
 async function createSession(userId: string) {

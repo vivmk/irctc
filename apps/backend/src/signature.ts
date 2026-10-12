@@ -3,7 +3,7 @@ import { config } from "./config";
 
 export function sign(ref: string, status: string, amountPaise: number): string {
   return createHmac("sha256", config.bankSecret)
-    .update(`${ref}|${status}|${amountPaise}`)
+    .update(JSON.stringify([ref, status, amountPaise])) // unambiguous: no field can bleed into the next
     .digest("hex");
 }
 

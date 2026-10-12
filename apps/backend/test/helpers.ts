@@ -15,7 +15,7 @@ export async function signedWebhook(
   amountPaise: number,
 ) {
   const signature = createHmac("sha256", "test-secret")
-    .update(`${ref}|${status}|${amountPaise}`)
+    .update(JSON.stringify([ref, status, amountPaise]))
     .digest("hex");
   const res = await fetch(`${BASE}/webhooks/payment`, {
     method: "POST",
@@ -39,8 +39,7 @@ export async function resetDb() {
   await db.query(
     "update seat_segments set status='free', booking_id=null, held_until=null",
   );
-  await db.query("delete from notification_log");
-  await db.query("delete from outbox");
+  await db.query("truncate notification_log, outbox");
   await db.query("delete from payments");
   await db.query("delete from booking_passengers");
   await db.query("delete from bookings");

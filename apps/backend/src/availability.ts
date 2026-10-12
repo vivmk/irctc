@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AvailabilityResponse, ErrorShape } from "@irctc/shared-types";
 import { pool } from "./db";
+import { isRealDate } from "./journey";
 
 type Query = {
   trainNumber?: string;
@@ -20,13 +21,17 @@ export async function availabilityRoutes(app: FastifyInstance) {
   app.get<{ Querystring: Query }>("/availability", async (req, reply) => {
     const { trainNumber, date, from, to, class: cls } = req.query;
 
+    // ?date=a&date=b arrives as a list; every parameter must be given exactly once
+    if ([trainNumber, date, from, to, cls].some((v) => v !== undefined && typeof v !== "string")) {
+      return reply.code(400).send(bad("each parameter must be given once"));
+    }
     if (!trainNumber || !date || !from || !to || !cls) {
       return reply
         .code(400)
         .send(bad("trainNumber, date, from, to, class are required"));
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return reply.code(400).send(bad("date must look like 2026-12-25"));
+    if (!isRealDate(date)) {
+      return reply.code(400).send(bad("date must be a real date like 2026-12-25"));
     }
 
     // 1. station codes -> stop positions on this train

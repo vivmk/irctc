@@ -95,7 +95,7 @@ describe("paying", () => {
     const { createHmac } = await import("node:crypto");
     const amountPaise = 1; // our record says 50000
     const signature = createHmac("sha256", "test-secret")
-      .update(`${ref}|paid|${amountPaise}`)
+      .update(JSON.stringify([ref, "paid", amountPaise]))
       .digest("hex");
 
     const res = await fetch(`http://localhost:3101/webhooks/payment`, {

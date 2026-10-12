@@ -29,7 +29,7 @@ export const notifyQueue = new Queue("notifications", {
 });
 notifyQueue.on("error", () => {});
 
-function messageFor(type: string, p: any): string {
+export function messageFor(type: string, p: any): string {
   const rupees = (paise: number) => (paise / 100).toFixed(2);
   if (type === "booking_confirmed") {
     const seats = p.seats.map((s: any) => `${s.coach}-${s.seat}`).join(", ");
@@ -139,9 +139,21 @@ export async function relayOutbox(): Promise<number> {
     // jobId = the note's id, so adding it twice creates one token
     await notifyQueue.add("send", { outboxId: row.id }, { jobId: row.id });
     await pool.query(
-      "update outbox set status = 'queued' where id = $1 and status = 'pending'",
+      "update outbox set status = 'queued', queued_at = now() where id = $1 and status = 'pending'",
       [row.id],
     );
   }
   return pending.rowCount ?? 0;
+}
+
+// A note marked "queued" whose token isn't being served (Redis lost data, say) goes back in the notebook.
+// Safe to repeat: adding a token whose jobId already exists is ignored by the queue.
+export async function requeueStuck(): Promise<number> {
+  const r = await pool.query(
+    `update outbox set status = 'pending'
+     where status = 'queued'
+       and coalesce(queued_at, created_at) < now() - make_interval(secs => $1::double precision)`,
+    [config.requeueAfterSeconds],
+  );
+  return r.rowCount ?? 0;
 }

@@ -15,8 +15,11 @@ import { pool } from "./db";
 import { redis } from "./redis";
 import { cancelRoutes } from "./cancel";
 import { authRoutes } from "./auth";
+import { frameworkErrors, installErrorHandlers } from "./errors";
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: { level: config.logLevel }, frameworkErrors });
+
+installErrorHandlers(app);
 
 await app.register(cors, { origin: true });
 await app.register(availabilityRoutes);

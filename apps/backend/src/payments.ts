@@ -309,7 +309,7 @@ export async function paymentRoutes(app: FastifyInstance) {
         const amount = count.rows[0].n * config.farePaise;
         const ref = randomUUID();
 
-        await createBankTransaction(ref, amount); // tell the bank to expect this payment
+        await createBankTransaction(ref, amount, client); // tell the bank to expect this payment (same connection)
         const pay = await client.query(
           `insert into payments (booking_id, amount_paise, status, provider_ref)
          values ($1, $2, 'initiated', $3)
@@ -363,6 +363,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       const sig = req.headers["x-bank-signature"];
 
       if (
+        typeof ref !== "string" ||
         !ref ||
         (status !== "paid" && status !== "failed") ||
         typeof amountPaise !== "number" ||

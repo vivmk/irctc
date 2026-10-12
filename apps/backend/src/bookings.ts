@@ -8,7 +8,7 @@ import type {
 } from "@irctc/shared-types";
 import { pool } from "./db";
 import { config } from "./config";
-import { resolveJourney } from "./journey";
+import { isRealDate, resolveJourney } from "./journey";
 import { ownedBy, requireUser } from "./auth";
 
 const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
@@ -19,24 +19,25 @@ const err = (code: string, message: string, canRetry: boolean): ErrorShape => ({
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function validate(b: Partial<BookingRequest> | undefined): string | null {
-  if (!b) return "body is required";
-  if (!b.requestId || !UUID.test(b.requestId))
-    return `requestId must be a uuid, got "${b.requestId}" (length ${b.requestId?.length})`;
-  if (!b.trainNumber || !b.date || !b.from || !b.to || !b.class)
-    return "trainNumber, date, from, to, class are required";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date))
-    return "date must look like 2026-12-25";
-  if (
-    !Array.isArray(b.passengers) ||
-    b.passengers.length < 1 ||
-    b.passengers.length > 6
-  )
+export function validate(b: Partial<BookingRequest> | undefined): string | null {
+  if (!b || typeof b !== "object" || Array.isArray(b))
+    return "body must be a JSON object; send the header Content-Type: application/json";
+  if (typeof b.requestId !== "string" || !UUID.test(b.requestId))
+    return "requestId must be a uuid";
+  const { trainNumber, date, from, to, class: cls } = b;
+  if ([trainNumber, date, from, to, cls].some((v) => typeof v !== "string" || v === ""))
+    return "trainNumber, date, from, to, class are required text values";
+  if (!isRealDate(date as string)) return "date must be a real date like 2026-12-25";
+  if (!Array.isArray(b.passengers) || b.passengers.length < 1 || b.passengers.length > 6)
     return "between 1 and 6 passengers are required";
-  for (const p of b.passengers) {
-    if (!p.name || !Number.isInteger(p.age) || p.age < 0 || p.age > 120)
-      return "each passenger needs a name and a valid age";
-    if (!["male", "female", "other"].includes(p.gender))
+  for (const p of b.passengers as unknown[]) {
+    const x = p as Record<string, unknown> | null;
+    if (!x || typeof x !== "object") return "each passenger must be an object";
+    if (typeof x.name !== "string" || !x.name.trim() || x.name.length > 100)
+      return "each passenger needs a name of 1 to 100 characters";
+    if (!Number.isInteger(x.age) || (x.age as number) < 0 || (x.age as number) > 120)
+      return "each passenger needs an age from 0 to 120";
+    if (!["male", "female", "other"].includes(x.gender as string))
       return "gender must be male, female or other";
   }
   if (b.waitlistIfFull !== undefined && typeof b.waitlistIfFull !== "boolean")
@@ -188,7 +189,6 @@ export async function bookingRoutes(app: FastifyInstance) {
       try {
         await client.query("begin");
 
-        // 1. create the booking. If this requestId already exists, nothing is inserted.
         const created = await client.query(
           `insert into bookings (request_id, user_id, run_id, class, first_segment, last_segment,
                                stage, hold_expires_at)
@@ -231,7 +231,6 @@ export async function bookingRoutes(app: FastifyInstance) {
         }
         const bookingId: string = created.rows[0].id;
 
-        // 3. one seat per passenger, all inside this same all-or-nothing step
         // 3. one seat per passenger, all inside this same all-or-nothing step
         await client.query("savepoint seats"); // a bookmark we can roll back to
         let gotAll = true;
@@ -298,10 +297,12 @@ export async function bookingRoutes(app: FastifyInstance) {
         return reply
           .code(400)
           .send(err("BAD_REQUEST", "id must be a uuid", false));
+
       if (!(await ownedBy(req.params.id, req.userId!)))
         return reply
           .code(404)
           .send(err("NOT_FOUND", "Booking not found", false));
+
       const booking = await loadBooking(pool, req.params.id);
       if (!booking)
         return reply
